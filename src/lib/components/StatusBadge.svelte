@@ -7,12 +7,14 @@
     healthy: '#22c55e',
     degraded: '#f59e0b',
     critical: '#ef4444',
+    unknown: '#6b7280',
   }
 
   const labels: Record<OverallStatus, string> = {
     healthy: 'Healthy',
     degraded: 'Degraded',
     critical: 'Critical',
+    unknown: 'Unknown',
   }
 </script>
 

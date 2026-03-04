@@ -14,7 +14,9 @@ Built for diagnosing flaky Wi-Fi — especially on MacBooks where AirDrop, Bluet
 
 - **Auto-applies fixes** with one click: flush DNS, switch to Cloudflare DNS (1.1.1.1), disable AWDL, optimize TCP settings, restart Wi-Fi, and more. Each fix shows whether it succeeded or failed.
 
-- **AI-powered insights** (optional) — connects to any OpenAI-compatible API to analyze trends and detect root causes. Shows explanations like "AWDL was active during the 3pm degradation" in the AI Insights panel.
+- **AI-powered insights** — analyzes trends and detects root causes. Shows explanations like "AWDL was active during the 3pm degradation" in the AI Insights panel, with **one-click Apply buttons** for every recommended fix. Supports OpenAI-compatible APIs, Anthropic, and local Ollama.
+
+- **Auto-discovers LLM backends** on startup — detects environment variables or a running Ollama instance so AI features work with zero setup. Manual configuration in Settings always takes priority.
 
 - **Native notifications** when your connection degrades — so you know immediately without watching the dashboard.
 
@@ -45,13 +47,17 @@ Produces a `.dmg` on macOS and `.exe` installer on Windows in the `dist/` folder
 2. Click **Run Test Now** to trigger a manual test at any time.
 3. Check the **Latency & Jitter** and **Throughput** charts to see trends over the last 24 hours.
 4. Open **Quick Fixes** and click **Apply** on any fix to improve your connection.
-5. If you have an OpenAI-compatible API key, set these environment variables for AI analysis:
+5. **AI analysis** works automatically if it finds a backend:
+   - **Ollama** — install [Ollama](https://ollama.com), pull a model (`ollama pull llama3.2`), and the app detects it on startup.
+   - **API key** — set environment variables before launching:
+     ```bash
+     export LLM_API_KEY="your-api-key"
+     export LLM_BASE_URL="https://api.openai.com/v1"  # optional, this is the default
+     export LLM_MODEL="gpt-4o-mini"                    # optional, this is the default
+     ```
+   - **Manual** — open Settings and pick a provider (OpenAI, Anthropic, or Ollama).
 
-```bash
-export LLM_API_KEY="your-api-key"
-export LLM_BASE_URL="https://api.openai.com/v1"  # optional, this is the default
-export LLM_MODEL="gpt-4o-mini"                    # optional, this is the default
-```
+   When the AI recommends a fix, click **Apply** directly from the insight — no need to find it in the Quick Fixes panel.
 
 ## Supported Platforms
 

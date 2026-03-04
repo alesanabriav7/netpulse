@@ -1,0 +1,30 @@
+appId: com.netpulse.app
+productName: NetPulse
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!shared/*'
+  - '!electron/*'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+asarUnpack:
+  - node_modules/better-sqlite3/**
+mac:
+  target:
+    - dmg
+    - zip
+  artifactName: '${name}-${version}-${arch}.${ext}'
+  entitlementsInherit: build/entitlements.mac.plist
+dmg:
+  artifactName: '${name}-${version}.${ext}'
+win:
+  target:
+    - nsis
+  artifactName: '${name}-${version}-setup.${ext}'
+nsis:
+  artifactName: '${name}-${version}-setup.${ext}'
+  shortcutName: NetPulse
+  uninstallDisplayName: NetPulse
+  createDesktopShortcut: always

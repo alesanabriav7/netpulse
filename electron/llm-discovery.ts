@@ -5,7 +5,7 @@ interface OllamaTagsResponse {
 }
 
 interface DiscoveryResult {
-  provider: 'openai' | 'ollama' | null
+  provider: 'openai' | 'ollama' | 'anthropic' | null
   apiKey: string | null
   baseUrl: string | null
   model: string | null
@@ -22,7 +22,10 @@ async function checkOllama(): Promise<{ available: boolean; models: string[] }> 
     const data = (await res.json()) as OllamaTagsResponse
     const models = (data.models ?? []).map((m) => m.name)
     return { available: models.length > 0, models }
-  } catch {
+  } catch (err: unknown) {
+    if (err instanceof Error && !err.message.includes('ECONNREFUSED') && err.name !== 'AbortError') {
+      console.warn('Ollama check failed:', err.message)
+    }
     return { available: false, models: [] }
   }
 }
@@ -32,7 +35,7 @@ export async function discoverLlm(): Promise<DiscoveryResult> {
 
   // 1. Existing manual config — keep it
   if (config.llmProvider && !config.llmAutoDetected) {
-    return { provider: config.llmProvider === 'anthropic' ? null : config.llmProvider, apiKey: config.llmApiKey, baseUrl: config.llmBaseUrl, model: config.llmModel, source: 'manual' }
+    return { provider: config.llmProvider, apiKey: config.llmApiKey, baseUrl: config.llmBaseUrl, model: config.llmModel, source: 'manual' }
   }
 
   // 2. Explicit disable — skip

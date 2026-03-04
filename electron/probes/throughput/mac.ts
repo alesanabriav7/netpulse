@@ -59,7 +59,10 @@ export async function runThroughputMac(): Promise<ThroughputResult> {
     if (ulRespMatch) ul_responsiveness_rpm = parseInt(ulRespMatch[1])
 
     const latencyMatch = raw.match(/[Ii]dle\s+[Ll]atency:\s*([\d.]+)\s*milliseconds/i)
-    if (latencyMatch) dl_latency_ms = parseFloat(latencyMatch[1])
+    if (latencyMatch) {
+      dl_latency_ms = parseFloat(latencyMatch[1])
+      ul_latency_ms = dl_latency_ms // networkQuality reports single base RTT
+    }
   }
 
   return {

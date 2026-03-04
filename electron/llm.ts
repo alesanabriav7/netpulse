@@ -145,7 +145,7 @@ async function chatCompletionAnthropic(
             type: 'tool_use' as const,
             id: tc.id,
             name: tc.function.name,
-            input: JSON.parse(tc.function.arguments || '{}'),
+            input: (() => { try { return JSON.parse(tc.function.arguments || '{}') } catch { return {} } })(),
           })),
         ],
       }

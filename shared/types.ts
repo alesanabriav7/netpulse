@@ -102,6 +102,8 @@ export interface AppConfig {
   llmApiKey: string | null
   llmBaseUrl: string | null
   llmModel: string | null
+  llmEnabled: boolean | null
+  llmAutoDetected: boolean
   minimizeToTray: boolean
 }
 

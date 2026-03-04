@@ -7,6 +7,7 @@
   import FixPanel from './FixPanel.svelte'
   import SummaryPanel from './SummaryPanel.svelte'
   import Settings from './Settings.svelte'
+  import LlmBanner from './LlmBanner.svelte'
   import { latestMetrics, metricsHistory, scores, overallStatus, initMetricsStore } from '../stores/metrics'
   import { initAnalysisStore } from '../stores/analysis'
   import { loadFixStatuses } from '../stores/fixes'
@@ -252,6 +253,8 @@
       </button>
     </div>
   </header>
+
+  <LlmBanner onOpenSettings={() => settingsOpen = true} />
 
   {#if running || probeStep}
     <div class="testing-banner">

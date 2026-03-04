@@ -34,6 +34,7 @@ const api: IpcApi = {
   },
   getSummaries: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SUMMARIES),
   generateSummary: () => ipcRenderer.invoke(IPC_CHANNELS.GENERATE_SUMMARY),
+  discoverLlm: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_DISCOVER),
 }
 
 contextBridge.exposeInMainWorld('api', api)

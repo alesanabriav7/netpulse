@@ -16,6 +16,7 @@ export interface IpcApi {
   onConfigUpdate: (callback: (config: SafeAppConfig) => void) => () => void
   getSummaries: () => Promise<Summary[]>
   generateSummary: () => Promise<Summary | null>
+  discoverLlm: () => Promise<{ provider: string | null; source: string }>
 }
 
 export const IPC_CHANNELS = {
@@ -36,4 +37,5 @@ export const IPC_CHANNELS = {
   GENERATE_SUMMARY: 'summary:generate',
   SUMMARY_UPDATED: 'summary:updated',
   PROBE_PROGRESS: 'probe:progress',
+  LLM_DISCOVER: 'llm:discover',
 } as const

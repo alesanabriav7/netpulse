@@ -7,6 +7,7 @@ import { generateSummary } from './summary'
 import { startScheduler, runProbeNow, setSchedulerWindow } from './scheduler'
 import { applyFix, getFixStatuses, checkAllFixes } from './fixer'
 import { getConfig, setConfig, getSafeConfig } from './config'
+import { runDiscoveryAndApply, discoverLlm } from './llm-discovery'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -100,11 +101,21 @@ app.on('before-quit', () => {
   isQuitting = true
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initDb()
   cleanupOldData()
 
+  await runDiscoveryAndApply()
+
   mainWindow = createWindow()
+
+  // Broadcast config after discovery so renderer picks up auto-detected LLM
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.CONFIG_UPDATED, getSafeConfig())
+    }
+  })
+
   startScheduler(mainWindow)
   createTray()
   setupWindowClose()
@@ -127,6 +138,10 @@ app.whenReady().then(() => {
       mainWindow.webContents.send(IPC_CHANNELS.CONFIG_UPDATED, safe)
     }
     return safe
+  })
+  ipcMain.handle(IPC_CHANNELS.LLM_DISCOVER, async () => {
+    const result = await discoverLlm()
+    return { provider: result.provider, source: result.source }
   })
   ipcMain.handle(IPC_CHANNELS.GET_SUMMARIES, () => getSummaries())
   ipcMain.handle(IPC_CHANNELS.GENERATE_SUMMARY, async () => {

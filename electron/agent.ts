@@ -125,6 +125,7 @@ Respond with JSON: {"status": "healthy|degraded|critical", "summary": "...", "ro
 
 export async function runAnalysis(metricId: number): Promise<Analysis | null> {
   const config = getConfig()
+  if (config.llmEnabled === false) return null
   if (!config.llmProvider && !process.env.LLM_API_KEY) return null
 
   const messages: { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[] }[] = [

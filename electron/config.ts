@@ -11,6 +11,8 @@ const defaults: AppConfig = {
   llmApiKey: null,
   llmBaseUrl: null,
   llmModel: null,
+  llmEnabled: null,
+  llmAutoDetected: false,
   minimizeToTray: false,
 }
 

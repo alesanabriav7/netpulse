@@ -2,7 +2,8 @@ import type { ThroughputResult } from '@shared/types'
 import { execProbe } from '../exec-probe'
 
 export async function runThroughputMac(): Promise<ThroughputResult> {
-  const raw = await execProbe('networkQuality -s -v', 120_000)
+  // Use -s for sequential (more accurate), -c for JSON output
+  const raw = await execProbe('networkQuality -s -c', 120_000)
   if (!raw) {
     return {
       dl_throughput_mbps: null,
@@ -22,39 +23,51 @@ export async function runThroughputMac(): Promise<ThroughputResult> {
   let dl_latency_ms: number | null = null
   let ul_latency_ms: number | null = null
 
-  // Try JSON parse first (networkQuality -s outputs JSON-like summary)
   try {
     const json = JSON.parse(raw)
-    dl_throughput_mbps = json.dl_throughput ? json.dl_throughput / 1_000_000 : null
-    ul_throughput_mbps = json.ul_throughput ? json.ul_throughput / 1_000_000 : null
-    dl_responsiveness_rpm = json.dl_responsiveness ?? null
-    ul_responsiveness_rpm = json.ul_responsiveness ?? null
-    dl_latency_ms = json.dl_latency ?? null
-    ul_latency_ms = json.ul_latency ?? null
+
+    // dl_throughput and ul_throughput are in bits per second
+    if (json.dl_throughput && json.dl_throughput > 0) {
+      dl_throughput_mbps = Math.round((json.dl_throughput / 1_000_000) * 100) / 100
+    }
+    if (json.ul_throughput && json.ul_throughput > 0) {
+      ul_throughput_mbps = Math.round((json.ul_throughput / 1_000_000) * 100) / 100
+    }
+
+    // Responsiveness in RPM
+    dl_responsiveness_rpm = json.dl_responsiveness ? Math.round(json.dl_responsiveness) : null
+    ul_responsiveness_rpm = json.ul_responsiveness ? Math.round(json.ul_responsiveness) : null
+
+    // base_rtt is idle latency in ms
+    dl_latency_ms = json.base_rtt ? Math.round(json.base_rtt * 100) / 100 : null
+    ul_latency_ms = dl_latency_ms // networkQuality reports single base RTT
   } catch {
-    // Fallback: parse text output
-    const dlMatch = raw.match(/Download capacity:\s*([\d.]+)\s*Mbps/)
+    // JSON parse failed — try parsing text output as fallback
+    // networkQuality -s (without -c) outputs text like:
+    // "Downlink capacity: 758.307 Mbps"
+    // "Uplink capacity: 91.110 Mbps"
+    const dlMatch = raw.match(/[Dd]ownlink\s+capacity:\s*([\d.]+)\s*Mbps/i)
     if (dlMatch) dl_throughput_mbps = parseFloat(dlMatch[1])
 
-    const ulMatch = raw.match(/Upload capacity:\s*([\d.]+)\s*Mbps/)
+    const ulMatch = raw.match(/[Uu]plink\s+capacity:\s*([\d.]+)\s*Mbps/i)
     if (ulMatch) ul_throughput_mbps = parseFloat(ulMatch[1])
 
-    const dlRespMatch = raw.match(/Download Responsiveness:\s*([\d.]+)\s*RPM/)
+    const dlRespMatch = raw.match(/[Dd]ownlink\s+Responsiveness:.*?(\d+)\s*RPM/i)
     if (dlRespMatch) dl_responsiveness_rpm = parseInt(dlRespMatch[1])
 
-    const ulRespMatch = raw.match(/Upload Responsiveness:\s*([\d.]+)\s*RPM/)
+    const ulRespMatch = raw.match(/[Uu]plink\s+Responsiveness:.*?(\d+)\s*RPM/i)
     if (ulRespMatch) ul_responsiveness_rpm = parseInt(ulRespMatch[1])
 
-    const dlLatMatch = raw.match(/Download Latency:\s*([\d.]+)\s*ms/)
-    if (dlLatMatch) dl_latency_ms = parseFloat(dlLatMatch[1])
-
-    const ulLatMatch = raw.match(/Upload Latency:\s*([\d.]+)\s*ms/)
-    if (ulLatMatch) ul_latency_ms = parseFloat(ulLatMatch[1])
+    const latencyMatch = raw.match(/[Ii]dle\s+[Ll]atency:\s*([\d.]+)\s*milliseconds/i)
+    if (latencyMatch) {
+      dl_latency_ms = parseFloat(latencyMatch[1])
+      ul_latency_ms = dl_latency_ms // networkQuality reports single base RTT
+    }
   }
 
   return {
-    dl_throughput_mbps: dl_throughput_mbps !== null ? Math.round(dl_throughput_mbps * 100) / 100 : null,
-    ul_throughput_mbps: ul_throughput_mbps !== null ? Math.round(ul_throughput_mbps * 100) / 100 : null,
+    dl_throughput_mbps,
+    ul_throughput_mbps,
     dl_responsiveness_rpm,
     ul_responsiveness_rpm,
     dl_latency_ms,

@@ -70,6 +70,7 @@ export interface Fix {
   description: string
   platforms: ('darwin' | 'win32')[]
   command: { darwin?: string; win32?: string }
+  check?: { darwin?: string; win32?: string; match: string }
   reversible: boolean
   requiresAdmin: boolean
 }
@@ -80,4 +81,28 @@ export interface FixStatus {
   lastResult: { success: boolean; message: string } | null
 }
 
-export type OverallStatus = 'healthy' | 'degraded' | 'critical'
+export interface Summary {
+  id?: number
+  timestamp: string
+  period_start: string
+  period_end: string
+  avg_streaming: number
+  avg_gaming: number
+  avg_videocalls: number
+  degraded_count: number
+  most_common_cause: string | null
+  narrative: string | null
+}
+
+export type OverallStatus = 'healthy' | 'degraded' | 'critical' | 'unknown'
+
+export interface AppConfig {
+  probeIntervalMinutes: 15 | 30 | 60
+  llmProvider: 'openai' | 'anthropic' | 'ollama' | null
+  llmApiKey: string | null
+  llmBaseUrl: string | null
+  llmModel: string | null
+  minimizeToTray: boolean
+}
+
+export type SafeAppConfig = Omit<AppConfig, 'llmApiKey'> & { hasLlmApiKey: boolean }

@@ -1,16 +1,24 @@
 <script lang="ts">
-  import { fixStatuses, loadFixStatuses, applyFix } from '../stores/fixes'
+  import { fixStatuses, loadFixStatuses, checkFixes, applyFix } from '../stores/fixes'
   import type { FixStatus } from '../../../shared/types'
+  import { onMount } from 'svelte'
 
   let statuses: Record<string, FixStatus> = $state({})
   let loading: Record<string, boolean> = $state({})
 
   fixStatuses.subscribe((v) => (statuses = v))
 
+  onMount(() => {
+    loadFixStatuses().then(() => checkFixes())
+  })
+
   const fixes = [
-    { id: 'flush-dns', label: 'Flush DNS Cache', description: 'Clear stale DNS entries that may slow lookups' },
+    { id: 'dns-cloudflare', label: 'Set DNS to Cloudflare', description: 'Sets DNS servers to Cloudflare 1.1.1.1 for faster DNS resolution' },
+    { id: 'tcp-tuning', label: 'TCP Tuning', description: 'Disables delayed ACK for lower latency' },
     { id: 'disable-awdl', label: 'Disable AWDL', description: 'Turn off AirDrop/AirPlay wireless interface to reduce Wi-Fi interference' },
-    { id: 'optimize-buffers', label: 'Optimize Network Buffers', description: 'Tune TCP buffer sizes for better throughput' },
+    { id: 'disable-bluetooth', label: 'Disable Bluetooth', description: 'Turns off Bluetooth to reduce wireless interference on the 2.4GHz band' },
+    { id: 'flush-dns', label: 'Flush DNS Cache', description: 'Clear stale DNS entries that may slow lookups' },
+    { id: 'restart-wifi', label: 'Restart Wi-Fi', description: 'Cycles the Wi-Fi adapter off and on to reset the connection' },
   ]
 
   async function handleApply(fixId: string) {
@@ -32,6 +40,9 @@
         <div class="fix-info">
           <div class="fix-label">{fix.label}</div>
           <div class="fix-desc">{fix.description}</div>
+          {#if status?.applied && !status?.lastResult}
+            <span class="detected-badge">Detected</span>
+          {/if}
           {#if status?.lastResult}
             <div class="fix-result" class:success={status.lastResult.success} class:failure={!status.lastResult.success}>
               {status.lastResult.message}
@@ -99,6 +110,15 @@
     color: #6b6b80;
     font-size: 12px;
     line-height: 1.4;
+  }
+  .detected-badge {
+    font-size: 11px;
+    color: #22c55e;
+    background: #22c55e15;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+    display: inline-block;
   }
   .fix-result {
     font-size: 11px;

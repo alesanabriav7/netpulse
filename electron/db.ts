@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import path from 'path'
-import type { Metrics, Analysis } from '@shared/types'
+import type { Metrics, Analysis, Summary } from '@shared/types'
 
 let db: Database.Database
 
@@ -33,6 +33,19 @@ export function initDb(): void {
       summary TEXT NOT NULL,
       root_cause TEXT,
       recommendation TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS summaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      avg_streaming INTEGER,
+      avg_gaming INTEGER,
+      avg_videocalls INTEGER,
+      degraded_count INTEGER DEFAULT 0,
+      most_common_cause TEXT,
+      narrative TEXT
     );
   `)
 }
@@ -109,6 +122,18 @@ export function insertAnalysis(a: Omit<Analysis, 'id' | 'timestamp'>): number {
 
 export function getAnalysis(): Analysis[] {
   return db.prepare('SELECT * FROM analysis ORDER BY id DESC LIMIT 50').all() as Analysis[]
+}
+
+export function insertSummary(s: Omit<Summary, 'id' | 'timestamp'>): number {
+  const stmt = db.prepare(`
+    INSERT INTO summaries (period_start, period_end, avg_streaming, avg_gaming, avg_videocalls, degraded_count, most_common_cause, narrative)
+    VALUES (@period_start, @period_end, @avg_streaming, @avg_gaming, @avg_videocalls, @degraded_count, @most_common_cause, @narrative)
+  `)
+  return stmt.run(s).lastInsertRowid as number
+}
+
+export function getSummaries(): Summary[] {
+  return db.prepare('SELECT * FROM summaries ORDER BY id DESC LIMIT 20').all() as Summary[]
 }
 
 export function cleanupOldData(retentionDays = 90): void {

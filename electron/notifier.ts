@@ -5,7 +5,7 @@ let lastNotificationTime = 0
 const THROTTLE_MS = 30 * 60 * 1000 // 30 minutes
 
 export function notifyDegradation(status: OverallStatus, summary: string): void {
-  if (status === 'healthy') return
+  if (status === 'healthy' || status === 'unknown') return
 
   const now = Date.now()
   if (now - lastNotificationTime < THROTTLE_MS) return

@@ -1,143 +1,173 @@
 import { BrowserWindow, powerMonitor } from 'electron'
-import type { Metrics, Scores } from '@shared/types'
+import type { Metrics, OverallStatus } from '@shared/types'
 import { IPC_CHANNELS } from '@shared/ipc-types'
+import { calculateScores } from '@shared/scores'
 import { runPing } from './probes/ping'
 import { runThroughput } from './probes/throughput/index'
 import { getWifiInfo } from './probes/wifi/index'
 import { insertMetrics, getLatestMetrics, getAnalysis } from './db'
 import { runAnalysis } from './agent'
 import { notifyDegradation } from './notifier'
-
-const INTERVAL_AC = 60 * 60 * 1000  // 60 min
-const INTERVAL_BATTERY = 120 * 60 * 1000  // 120 min
+import { getConfig } from './config'
 
 let timer: ReturnType<typeof setTimeout> | null = null
-let currentInterval = INTERVAL_AC
+let onBattery = false
+let currentWin: BrowserWindow | null = null
+let previousMetrics: Metrics | null = null
 
-function clamp(val: number): number {
-  return Math.max(0, Math.min(100, Math.round(val)))
+interface ChangeEvent {
+  type: string
+  description: string
+  severity: 'info' | 'warning' | 'critical'
 }
 
-function scoreComponent(
-  value: number | null,
-  excellent: number,
-  good: number,
-  poor: number,
-  higherIsBetter: boolean
-): number {
-  if (value == null) return 50 // neutral if no data
+function detectChanges(prev: Metrics, curr: Metrics): ChangeEvent[] {
+  const changes: ChangeEvent[] = []
 
-  if (higherIsBetter) {
-    if (value >= excellent) return 100
-    if (value >= good) return 75
-    if (value >= poor) return 40
-    return 20
-  } else {
-    if (value <= excellent) return 100
-    if (value <= good) return 75
-    if (value <= poor) return 40
-    return 20
+  // Latency spike (>50% increase or >30ms jump)
+  if (prev.ping_avg_ms != null && curr.ping_avg_ms != null) {
+    const increase = curr.ping_avg_ms - prev.ping_avg_ms
+    const pctIncrease = prev.ping_avg_ms > 0 ? increase / prev.ping_avg_ms : 0
+    if (pctIncrease > 0.5 || increase > 30) {
+      changes.push({
+        type: 'latency_spike',
+        description: `Latency spiked from ${prev.ping_avg_ms.toFixed(0)}ms to ${curr.ping_avg_ms.toFixed(0)}ms`,
+        severity: curr.ping_avg_ms > 100 ? 'critical' : 'warning',
+      })
+    }
   }
+
+  // Throughput drop (>30%)
+  if (prev.dl_throughput_mbps != null && curr.dl_throughput_mbps != null && prev.dl_throughput_mbps > 0) {
+    const drop = (prev.dl_throughput_mbps - curr.dl_throughput_mbps) / prev.dl_throughput_mbps
+    if (drop > 0.3) {
+      changes.push({
+        type: 'throughput_drop',
+        description: `Download dropped from ${prev.dl_throughput_mbps.toFixed(1)} to ${curr.dl_throughput_mbps.toFixed(1)} Mbps`,
+        severity: curr.dl_throughput_mbps < 5 ? 'critical' : 'warning',
+      })
+    }
+  }
+
+  // WiFi channel change
+  if (prev.wifi_channel != null && curr.wifi_channel != null && prev.wifi_channel !== curr.wifi_channel) {
+    changes.push({
+      type: 'channel_change',
+      description: `WiFi channel changed from ${prev.wifi_channel} to ${curr.wifi_channel}`,
+      severity: 'info',
+    })
+  }
+
+  // AWDL state change
+  if (prev.awdl_active != null && curr.awdl_active != null && prev.awdl_active !== curr.awdl_active) {
+    changes.push({
+      type: 'awdl_change',
+      description: curr.awdl_active ? 'AWDL became active (potential WiFi interference)' : 'AWDL became inactive',
+      severity: curr.awdl_active ? 'warning' : 'info',
+    })
+  }
+
+  // Packet loss spike (>2%)
+  if (curr.packet_loss_pct != null && curr.packet_loss_pct > 2) {
+    const prevLoss = prev.packet_loss_pct ?? 0
+    if (curr.packet_loss_pct - prevLoss > 1) {
+      changes.push({
+        type: 'packet_loss_spike',
+        description: `Packet loss spiked to ${curr.packet_loss_pct.toFixed(1)}%`,
+        severity: curr.packet_loss_pct > 5 ? 'critical' : 'warning',
+      })
+    }
+  }
+
+  return changes
 }
 
-function calculateScores(m: Partial<Metrics>): Scores {
-  // Streaming: dl(40%), jitter(25%), loss(20%), latency(15%)
-  const streaming = clamp(
-    scoreComponent(m.dl_throughput_mbps ?? null, 25, 10, 5, true) * 0.4 +
-    scoreComponent(m.ping_jitter_ms ?? null, 10, 30, 50, false) * 0.25 +
-    scoreComponent(m.packet_loss_pct ?? null, 0.5, 2, 5, false) * 0.2 +
-    scoreComponent(m.dl_latency_ms ?? m.ping_avg_ms ?? null, 50, 100, 200, false) * 0.15
-  )
+function getIntervalMs(): number {
+  const config = getConfig()
+  const baseMinutes = config.probeIntervalMinutes || 60
+  const baseMs = baseMinutes * 60 * 1000
+  // Halve frequency on battery
+  return onBattery ? baseMs * 2 : baseMs
+}
 
-  // Gaming: latency(35%), jitter(30%), loss(25%), dl(10%)
-  const gaming = clamp(
-    scoreComponent(m.ping_avg_ms ?? null, 20, 50, 100, false) * 0.35 +
-    scoreComponent(m.ping_jitter_ms ?? null, 5, 15, 30, false) * 0.3 +
-    scoreComponent(m.packet_loss_pct ?? null, 0.1, 1, 3, false) * 0.25 +
-    scoreComponent(m.dl_throughput_mbps ?? null, 10, 5, 3, true) * 0.1
-  )
-
-  // Video Calls: ul(25%), dl(20%), jitter(25%), latency(15%), loss(15%)
-  const videocalls = clamp(
-    scoreComponent(m.ul_throughput_mbps ?? null, 5, 2, 1, true) * 0.25 +
-    scoreComponent(m.dl_throughput_mbps ?? null, 10, 5, 2, true) * 0.2 +
-    scoreComponent(m.ping_jitter_ms ?? null, 10, 20, 40, false) * 0.25 +
-    scoreComponent(m.ping_avg_ms ?? null, 30, 80, 150, false) * 0.15 +
-    scoreComponent(m.packet_loss_pct ?? null, 0.5, 2, 5, false) * 0.15
-  )
-
-  return { streaming, gaming, videocalls }
+function emitProgress(phase: string, detail: string): void {
+  if (currentWin && !currentWin.isDestroyed()) {
+    currentWin.webContents.send(IPC_CHANNELS.PROBE_PROGRESS, { phase, detail })
+  }
 }
 
 async function runProbes(): Promise<Metrics> {
-  const [ping, throughput, wifi] = await Promise.all([
-    runPing(),
-    runThroughput(),
-    getWifiInfo()
-  ])
+  emitProgress('ping', 'Testing latency & packet loss...')
+  const ping = await runPing()
 
-  const partial: Partial<Metrics> = {
-    ping_avg_ms: ping.avg_ms,
-    ping_jitter_ms: ping.jitter_ms,
-    packet_loss_pct: ping.packet_loss_pct,
-    dl_throughput_mbps: throughput.dl_throughput_mbps,
-    ul_throughput_mbps: throughput.ul_throughput_mbps,
-    dl_responsiveness_rpm: throughput.dl_responsiveness_rpm,
-    ul_responsiveness_rpm: throughput.ul_responsiveness_rpm,
-    dl_latency_ms: throughput.dl_latency_ms,
-    ul_latency_ms: throughput.ul_latency_ms,
-    wifi_channel: wifi.channel,
-    wifi_noise_dbm: wifi.noise_dbm,
-    wifi_rssi_dbm: wifi.rssi_dbm,
-    wifi_tx_rate_mbps: wifi.tx_rate_mbps,
-    awdl_active: wifi.awdl_active
-  }
+  emitProgress('throughput', 'Measuring download & upload speed...')
+  const throughput = await runThroughput()
 
-  const scores = calculateScores(partial)
+  emitProgress('wifi', 'Checking WiFi signal quality...')
+  const wifi = await getWifiInfo()
+
+  emitProgress('scoring', 'Calculating scores...')
 
   const metrics: Metrics = {
     timestamp: new Date().toISOString(),
-    ping_avg_ms: partial.ping_avg_ms ?? null,
-    ping_jitter_ms: partial.ping_jitter_ms ?? null,
-    packet_loss_pct: partial.packet_loss_pct ?? null,
-    dl_throughput_mbps: partial.dl_throughput_mbps ?? null,
-    ul_throughput_mbps: partial.ul_throughput_mbps ?? null,
-    dl_responsiveness_rpm: partial.dl_responsiveness_rpm ?? null,
-    ul_responsiveness_rpm: partial.ul_responsiveness_rpm ?? null,
-    dl_latency_ms: partial.dl_latency_ms ?? null,
-    ul_latency_ms: partial.ul_latency_ms ?? null,
-    wifi_channel: partial.wifi_channel ?? null,
-    wifi_noise_dbm: partial.wifi_noise_dbm ?? null,
-    wifi_rssi_dbm: partial.wifi_rssi_dbm ?? null,
-    wifi_tx_rate_mbps: partial.wifi_tx_rate_mbps ?? null,
-    awdl_active: partial.awdl_active ?? null,
-    score_streaming: scores.streaming,
-    score_gaming: scores.gaming,
-    score_videocalls: scores.videocalls,
+    ping_avg_ms: ping.avg_ms ?? null,
+    ping_jitter_ms: ping.jitter_ms ?? null,
+    packet_loss_pct: ping.packet_loss_pct ?? null,
+    dl_throughput_mbps: throughput.dl_throughput_mbps ?? null,
+    ul_throughput_mbps: throughput.ul_throughput_mbps ?? null,
+    dl_responsiveness_rpm: throughput.dl_responsiveness_rpm ?? null,
+    ul_responsiveness_rpm: throughput.ul_responsiveness_rpm ?? null,
+    dl_latency_ms: throughput.dl_latency_ms ?? null,
+    ul_latency_ms: throughput.ul_latency_ms ?? null,
+    wifi_channel: wifi.channel ?? null,
+    wifi_noise_dbm: wifi.noise_dbm ?? null,
+    wifi_rssi_dbm: wifi.rssi_dbm ?? null,
+    wifi_tx_rate_mbps: wifi.tx_rate_mbps ?? null,
+    awdl_active: wifi.awdl_active ?? null,
+    score_streaming: null,
+    score_gaming: null,
+    score_videocalls: null,
     raw_json: JSON.stringify({ ping, throughput, wifi })
   }
+
+  const scores = calculateScores(metrics)
+  metrics.score_streaming = scores.streaming
+  metrics.score_gaming = scores.gaming
+  metrics.score_videocalls = scores.videocalls
 
   return metrics
 }
 
-async function probeCycle(win: BrowserWindow): Promise<void> {
+async function probeCycle(): Promise<void> {
   try {
     const metrics = await runProbes()
     const metricId = insertMetrics(metrics)
     metrics.id = metricId
 
+    emitProgress('done', 'Test complete!')
+
     // Send to renderer
-    if (!win.isDestroyed()) {
-      win.webContents.send(IPC_CHANNELS.METRICS_UPDATED, metrics)
+    if (currentWin && !currentWin.isDestroyed()) {
+      currentWin.webContents.send(IPC_CHANNELS.METRICS_UPDATED, metrics)
+    }
+
+    // Detect changes
+    const changes = previousMetrics ? detectChanges(previousMetrics, metrics) : []
+    previousMetrics = metrics
+
+    // Notify on significant changes
+    if (changes.some(c => c.severity === 'warning' || c.severity === 'critical')) {
+      const changeDesc = changes.map(c => c.description).join('; ')
+      notifyDegradation('degraded' as OverallStatus, changeDesc)
     }
 
     // Run agent analysis
     const analysis = await runAnalysis(metricId)
     if (analysis) {
       notifyDegradation(analysis.status, analysis.summary)
-      if (!win.isDestroyed()) {
+      if (currentWin && !currentWin.isDestroyed()) {
         const allAnalysis = getAnalysis()
-        win.webContents.send(IPC_CHANNELS.ANALYSIS_UPDATED, allAnalysis)
+        currentWin.webContents.send(IPC_CHANNELS.ANALYSIS_UPDATED, allAnalysis)
       }
     }
   } catch (err) {
@@ -145,29 +175,35 @@ async function probeCycle(win: BrowserWindow): Promise<void> {
   }
 }
 
-function scheduleNext(win: BrowserWindow): void {
+function scheduleNext(): void {
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => {
-    probeCycle(win).finally(() => scheduleNext(win))
-  }, currentInterval)
+    probeCycle().finally(() => scheduleNext())
+  }, getIntervalMs())
 }
 
-export function startScheduler(win: BrowserWindow): void {
+export function setSchedulerWindow(win: BrowserWindow | null): void {
+  currentWin = win
+}
+
+export function startScheduler(win: BrowserWindow | null): void {
+  currentWin = win
+
   // Power-aware scheduling
   powerMonitor.on('on-ac', () => {
-    currentInterval = INTERVAL_AC
+    onBattery = false
   })
   powerMonitor.on('on-battery', () => {
-    currentInterval = INTERVAL_BATTERY
+    onBattery = true
   })
 
   // Run first probe immediately
-  probeCycle(win).finally(() => scheduleNext(win))
+  probeCycle().finally(() => scheduleNext())
 }
 
-export async function runProbeNow(win: BrowserWindow): Promise<void> {
+export async function runProbeNow(): Promise<void> {
   // Reset the timer
   if (timer) clearTimeout(timer)
-  await probeCycle(win)
-  scheduleNext(win)
+  await probeCycle()
+  scheduleNext()
 }

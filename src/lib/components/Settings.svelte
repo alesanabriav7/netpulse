@@ -45,6 +45,8 @@
       } else if (!config.llmProvider || config.llmProvider === 'ollama') {
         partial.llmApiKey = null
       }
+      partial.llmAutoDetected = false
+      partial.llmEnabled = config.llmProvider ? true : false
       await saveConfig(partial)
       open = false
     } finally {
@@ -87,7 +89,7 @@
       <div class="section">
         <h3>AI Analysis</h3>
         <label>
-          <span>Provider</span>
+          <span>Provider {#if config.llmAutoDetected}<span class="auto-tag">(Auto-detected)</span>{/if}</span>
           <select
             value={config.llmProvider || ''}
             onchange={(e) => onProviderChange((e.target as HTMLSelectElement).value)}
@@ -193,6 +195,11 @@
   .key-status {
     color: #22c55e;
     font-size: 12px;
+    font-weight: 400;
+  }
+  .auto-tag {
+    color: #3b82f6;
+    font-size: 11px;
     font-weight: 400;
   }
   .toggle-row {

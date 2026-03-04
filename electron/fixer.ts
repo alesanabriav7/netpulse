@@ -8,6 +8,7 @@ const fixRegistry: Fix[] = [
     description: 'Disables Apple Wireless Direct Link (AirDrop/Handoff) which can cause Wi-Fi interference',
     platforms: ['darwin'],
     command: { darwin: 'sudo ifconfig awdl0 down' },
+    check: { darwin: 'ifconfig awdl0', match: 'status: inactive' },
     reversible: true,
     requiresAdmin: true
   },
@@ -20,6 +21,7 @@ const fixRegistry: Fix[] = [
       darwin: 'sudo sysctl -w net.inet.tcp.delayed_ack=0',
       win32: 'netsh int tcp set global autotuninglevel=normal'
     },
+    check: { darwin: 'sysctl net.inet.tcp.delayed_ack', match: '0' },
     reversible: true,
     requiresAdmin: true
   },
@@ -32,6 +34,7 @@ const fixRegistry: Fix[] = [
       darwin: 'networksetup -setdnsservers Wi-Fi 1.1.1.1 1.0.0.1',
       win32: 'netsh interface ip set dns "Wi-Fi" static 1.1.1.1 && netsh interface ip add dns "Wi-Fi" 1.0.0.1 index=2'
     },
+    check: { darwin: 'networksetup -getdnsservers Wi-Fi', match: '1.1.1.1' },
     reversible: true,
     requiresAdmin: false
   },
@@ -68,6 +71,7 @@ const fixRegistry: Fix[] = [
       darwin: 'blueutil --power 0',
       win32: 'powershell -Command "Get-PnpDevice -Class Bluetooth | Disable-PnpDevice -Confirm:$false"'
     },
+    check: { darwin: 'blueutil --power', match: '0' },
     reversible: true,
     requiresAdmin: true
   },
@@ -133,9 +137,9 @@ export async function applyFix(fixId: string): Promise<{ success: boolean; messa
 
   const output = await execProbe(cmd, 30_000)
   const success = output !== '' || !fix.requiresAdmin
-  const result = { success: true, message: output || 'Fix applied successfully' }
+  const result = { success, message: output || (success ? 'Fix applied successfully' : 'Fix may have failed') }
 
-  fixStatuses.set(fixId, { fixId, applied: true, lastResult: result })
+  fixStatuses.set(fixId, { fixId, applied: success, lastResult: result })
   return result
 }
 
@@ -145,4 +149,28 @@ export function getFixStatuses(): Record<string, FixStatus> {
     result[id] = status
   }
   return result
+}
+
+export async function checkAllFixes(): Promise<Record<string, FixStatus>> {
+  const platform = process.platform as 'darwin' | 'win32'
+
+  for (const fix of fixRegistry) {
+    if (!fix.check || !fix.platforms.includes(platform)) continue
+    const cmd = fix.check[platform]
+    if (!cmd) continue
+
+    try {
+      const output = await execProbe(cmd, 5000)
+      const applied = output.includes(fix.check.match)
+      const current = fixStatuses.get(fix.id)
+      // Only update if we haven't manually applied (preserve manual apply state)
+      if (!current?.lastResult) {
+        fixStatuses.set(fix.id, { fixId: fix.id, applied, lastResult: null })
+      }
+    } catch {
+      // Check failed, leave status unchanged
+    }
+  }
+
+  return getFixStatuses()
 }

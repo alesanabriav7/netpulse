@@ -7,6 +7,10 @@ export async function loadFixStatuses(): Promise<void> {
   fixStatuses.set(await window.api.getFixStatuses())
 }
 
+export async function checkFixes(): Promise<void> {
+  fixStatuses.set(await window.api.checkFixes())
+}
+
 export async function applyFix(fixId: string): Promise<{ success: boolean; message: string }> {
   const result = await window.api.applyFix(fixId)
   fixStatuses.update((statuses) => ({

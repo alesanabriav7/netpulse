@@ -1,4 +1,4 @@
-import type { Metrics, Analysis, FixStatus, AppConfig, Summary } from './types'
+import type { Metrics, Analysis, FixStatus, AppConfig, SafeAppConfig, Summary } from './types'
 
 export interface IpcApi {
   getLatestMetrics: () => Promise<Metrics | null>
@@ -10,10 +10,10 @@ export interface IpcApi {
   checkFixes: () => Promise<Record<string, FixStatus>>
   onMetricsUpdate: (callback: (metrics: Metrics) => void) => () => void
   onAnalysisUpdate: (callback: (analysis: Analysis[]) => void) => () => void
-  getConfig: () => Promise<AppConfig>
-  setConfig: (partial: Partial<AppConfig>) => Promise<AppConfig>
+  getConfig: () => Promise<SafeAppConfig>
+  setConfig: (partial: Partial<AppConfig>) => Promise<SafeAppConfig>
   onProbeProgress: (callback: (step: { phase: string; detail: string }) => void) => () => void
-  onConfigUpdate: (callback: (config: AppConfig) => void) => () => void
+  onConfigUpdate: (callback: (config: SafeAppConfig) => void) => () => void
   getSummaries: () => Promise<Summary[]>
   generateSummary: () => Promise<Summary | null>
 }

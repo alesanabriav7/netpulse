@@ -12,6 +12,7 @@
   import { loadFixStatuses } from '../stores/fixes'
   import { initConfigStore } from '../stores/config'
   import type { Metrics, Scores, OverallStatus } from '../../../shared/types'
+  import { tier } from '../../../shared/scores'
 
   let currentScores: Scores | null = $state(null)
   let currentStatus: OverallStatus | null = $state(null)
@@ -138,24 +139,6 @@
     if (score >= 80) return 'healthy'
     if (score >= 50) return 'degraded'
     return 'critical'
-  }
-
-  function tier(value: number | null, thresholds: [number, number, number], ascending: boolean): number {
-    if (value === null) return -1
-    const [excellent, good, poor] = thresholds
-
-    if (ascending) {
-      if (value >= excellent) return 100
-      if (value >= good) return 70 + 30 * (value - good) / (excellent - good)
-      if (value >= poor) return 40 + 30 * (value - poor) / (good - poor)
-      if (value > 0) return Math.max(5, 40 * value / poor)
-      return 0
-    } else {
-      if (value <= excellent) return 100
-      if (value <= good) return 70 + 30 * (good - value) / (good - excellent)
-      if (value <= poor) return 40 + 30 * (poor - value) / (poor - good)
-      return Math.max(5, 40 * Math.max(0, 1 - (value - poor) / poor))
-    }
   }
 
   function fmt(v: number | null, unit: string): string {

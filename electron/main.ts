@@ -6,7 +6,7 @@ import { initDb, getLatestMetrics, getMetricsRange, getAnalysis, getSummaries, c
 import { generateSummary } from './summary'
 import { startScheduler, runProbeNow, setSchedulerWindow } from './scheduler'
 import { applyFix, getFixStatuses, checkAllFixes } from './fixer'
-import { getConfig, setConfig } from './config'
+import { getConfig, setConfig, getSafeConfig } from './config'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -119,13 +119,14 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.GET_ANALYSIS, () => getAnalysis())
   ipcMain.handle(IPC_CHANNELS.GET_FIX_STATUSES, () => getFixStatuses())
   ipcMain.handle(IPC_CHANNELS.CHECK_FIXES, () => checkAllFixes())
-  ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => getConfig())
+  ipcMain.handle(IPC_CHANNELS.GET_CONFIG, () => getSafeConfig())
   ipcMain.handle(IPC_CHANNELS.SET_CONFIG, (_e, partial) => {
-    const updated = setConfig(partial)
+    setConfig(partial)
+    const safe = getSafeConfig()
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.CONFIG_UPDATED, updated)
+      mainWindow.webContents.send(IPC_CHANNELS.CONFIG_UPDATED, safe)
     }
-    return updated
+    return safe
   })
   ipcMain.handle(IPC_CHANNELS.GET_SUMMARIES, () => getSummaries())
   ipcMain.handle(IPC_CHANNELS.GENERATE_SUMMARY, async () => {

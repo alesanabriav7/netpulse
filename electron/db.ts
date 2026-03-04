@@ -140,4 +140,5 @@ export function cleanupOldData(retentionDays = 90): void {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
   db.prepare('DELETE FROM analysis WHERE timestamp < ?').run(cutoff)
   db.prepare('DELETE FROM metrics WHERE timestamp < ?').run(cutoff)
+  db.prepare('DELETE FROM summaries WHERE timestamp < ?').run(cutoff)
 }

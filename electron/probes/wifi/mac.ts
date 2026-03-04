@@ -27,6 +27,7 @@ export async function getWifiInfoMac(): Promise<WifiInfo & { awdl_active: boolea
 
         if (currentNetwork) {
           result.ssid = currentNetwork._name ?? null
+          result.bssid = currentNetwork.spairport_network_bssid ?? null
           result.security = currentNetwork.spairport_security_mode ?? null
 
           const channel = currentNetwork.spairport_network_channel

@@ -1,5 +1,22 @@
 import { getConfig } from './config'
 
+const TRUSTED_HOSTS = [
+  'api.openai.com',
+  'api.anthropic.com',
+  'localhost',
+  '127.0.0.1',
+]
+
+function isBaseUrlSafe(url: string, apiKey: string | null): boolean {
+  if (!apiKey) return true // No key to steal
+  try {
+    const parsed = new URL(url)
+    return TRUSTED_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h))
+  } catch {
+    return false
+  }
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -51,6 +68,11 @@ function getProviderConfig(): { provider: string; baseUrl: string; apiKey: strin
       model = model || 'llama3.2'
     }
 
+    if (!isBaseUrlSafe(baseUrl, apiKey)) {
+      console.warn(`Refusing to send API key to untrusted URL: ${baseUrl}`)
+      apiKey = null
+    }
+
     return { provider, baseUrl, apiKey, model }
   }
 
@@ -58,10 +80,18 @@ function getProviderConfig(): { provider: string; baseUrl: string; apiKey: strin
   const envKey = process.env.LLM_API_KEY
   if (!envKey) return { provider: 'none', baseUrl: '', apiKey: null, model: '' }
 
+  const baseUrl = process.env.LLM_BASE_URL || 'https://api.openai.com/v1'
+  let apiKey: string | null = envKey
+
+  if (!isBaseUrlSafe(baseUrl, apiKey)) {
+    console.warn(`Refusing to send API key to untrusted URL: ${baseUrl}`)
+    apiKey = null
+  }
+
   return {
     provider: 'openai',
-    baseUrl: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
-    apiKey: envKey,
+    baseUrl,
+    apiKey,
     model: process.env.LLM_MODEL || 'gpt-4o-mini',
   }
 }

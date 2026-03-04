@@ -7,7 +7,8 @@ interface WeightedMetric {
   ascending: boolean
 }
 
-function tier(value: number, thresholds: [number, number, number], ascending: boolean): number {
+export function tier(value: number | null, thresholds: [number, number, number], ascending: boolean): number {
+  if (value === null) return -1
   // thresholds: [excellent, good, poor] boundary values
   // Returns 0-100 with smooth interpolation between thresholds
   const [excellent, good, poor] = thresholds

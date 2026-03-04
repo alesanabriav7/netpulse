@@ -104,3 +104,5 @@ export interface AppConfig {
   llmModel: string | null
   minimizeToTray: boolean
 }
+
+export type SafeAppConfig = Omit<AppConfig, 'llmApiKey'> & { hasLlmApiKey: boolean }

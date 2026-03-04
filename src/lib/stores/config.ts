@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store'
-import type { AppConfig } from '../../../shared/types'
+import type { AppConfig, SafeAppConfig } from '../../../shared/types'
 
-export const appConfig = writable<AppConfig | null>(null)
+export const appConfig = writable<SafeAppConfig | null>(null)
 
 export async function loadConfig(): Promise<void> {
   const config = await window.api.getConfig()

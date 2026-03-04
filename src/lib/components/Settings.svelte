@@ -1,13 +1,17 @@
 <script lang="ts">
   import { appConfig, saveConfig, loadConfig } from '../stores/config'
-  import type { AppConfig } from '../../../shared/types'
+  import type { AppConfig, SafeAppConfig } from '../../../shared/types'
 
   let { open = $bindable(false) }: { open: boolean } = $props()
 
-  let config: AppConfig | null = $state(null)
+  let config: SafeAppConfig | null = $state(null)
+  let apiKeyInput = $state('')
   let saving = $state(false)
 
-  appConfig.subscribe(v => { config = v ? { ...v } : null })
+  appConfig.subscribe(v => {
+    config = v ? { ...v } : null
+    apiKeyInput = ''
+  })
 
   const providerDefaults: Record<string, { baseUrl: string; model: string }> = {
     openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -22,11 +26,11 @@
     if (p && providerDefaults[p]) {
       config.llmBaseUrl = providerDefaults[p].baseUrl
       config.llmModel = providerDefaults[p].model
-      if (p === 'ollama') config.llmApiKey = null
+      if (p === 'ollama') apiKeyInput = ''
     } else {
       config.llmBaseUrl = null
       config.llmModel = null
-      config.llmApiKey = null
+      apiKeyInput = ''
     }
   }
 
@@ -34,7 +38,14 @@
     if (!config) return
     saving = true
     try {
-      await saveConfig(config)
+      const { hasLlmApiKey, ...rest } = config
+      const partial: Partial<AppConfig> = { ...rest }
+      if (apiKeyInput) {
+        partial.llmApiKey = apiKeyInput
+      } else if (!config.llmProvider || config.llmProvider === 'ollama') {
+        partial.llmApiKey = null
+      }
+      await saveConfig(partial)
       open = false
     } finally {
       saving = false
@@ -91,8 +102,8 @@
         {#if config.llmProvider}
           {#if config.llmProvider !== 'ollama'}
             <label>
-              <span>API Key</span>
-              <input type="password" bind:value={config.llmApiKey} placeholder="sk-..." />
+              <span>API Key {#if config.hasLlmApiKey && !apiKeyInput}<span class="key-status">(configured)</span>{/if}</span>
+              <input type="password" bind:value={apiKeyInput} placeholder={config.hasLlmApiKey ? 'Enter new key to replace' : 'sk-...'} />
             </label>
           {/if}
           <label>
@@ -178,6 +189,11 @@
     color: #a0a0b0;
     font-size: 13px;
     font-weight: 500;
+  }
+  .key-status {
+    color: #22c55e;
+    font-size: 12px;
+    font-weight: 400;
   }
   .toggle-row {
     flex-direction: row;

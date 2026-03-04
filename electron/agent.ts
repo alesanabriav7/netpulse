@@ -1,6 +1,8 @@
 import type { Analysis } from '@shared/types'
 import { chatCompletion } from './llm'
 import { getLatestMetrics, getMetricsRange, insertAnalysis } from './db'
+import { getFixStatuses } from './fixer'
+import { getConfig } from './config'
 
 const tools = [
   {
@@ -27,6 +29,14 @@ const tools = [
     function: {
       name: 'get_anomalies',
       description: 'Get recent metrics where any score dropped below 70 (degraded)',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_applied_fixes',
+      description: 'Get the list of network fixes and whether they are currently applied/detected',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -74,6 +84,10 @@ function handleToolCall(name: string, args: Record<string, unknown>): string {
       )
       return JSON.stringify(anomalies)
     }
+    case 'get_applied_fixes': {
+      const statuses = getFixStatuses()
+      return JSON.stringify(statuses)
+    }
     case 'compare_periods': {
       const p1 = getMetricsRange(args.period1_from as string, args.period1_to as string)
       const p2 = getMetricsRange(args.period2_from as string, args.period2_to as string)
@@ -86,20 +100,32 @@ function handleToolCall(name: string, args: Record<string, unknown>): string {
 
 const SYSTEM_PROMPT = `You are a network diagnostics agent for NetPulse. Analyze network metrics and provide concise assessments.
 
+IMPORTANT: When metric values are null/missing, this means the probe failed to collect that data — treat it as "no data available", NOT as a critical failure. Only score based on metrics that have actual values.
+
+Normal reference values:
+- Latency: <30ms excellent, 30-80ms good, >100ms poor
+- Jitter: <10ms excellent, 10-30ms acceptable, >50ms poor
+- Packet loss: <0.5% excellent, 0.5-2% acceptable, >5% critical
+- Download: >25 Mbps excellent, 10-25 good, <5 poor
+- Upload: >5 Mbps excellent, 2-5 good, <1 poor
+
 Determine the overall status:
-- "healthy": All scores above 80, no significant issues
-- "degraded": Any score between 50-80, or moderate packet loss/jitter
-- "critical": Any score below 50, or severe packet loss (>5%), or extremely high latency
+- "healthy": All available scores above 80, no significant issues
+- "degraded": Any available score between 50-80, or moderate packet loss/jitter
+- "critical": Any available score below 50, or severe packet loss (>5%), or extremely high latency (>200ms)
+
+Use get_applied_fixes to check what fixes are already in place before recommending actions.
 
 Provide:
 1. A brief summary (1-2 sentences) of the network condition
 2. Root cause analysis if degraded/critical
-3. Specific recommendation if degraded/critical
+3. Specific recommendation if degraded/critical (don't recommend fixes already applied)
 
 Respond with JSON: {"status": "healthy|degraded|critical", "summary": "...", "root_cause": "...|null", "recommendation": "...|null"}`
 
 export async function runAnalysis(metricId: number): Promise<Analysis | null> {
-  if (!process.env.LLM_API_KEY) return null
+  const config = getConfig()
+  if (!config.llmProvider && !process.env.LLM_API_KEY) return null
 
   const messages: { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_call_id?: string; tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[] }[] = [
     { role: 'system', content: SYSTEM_PROMPT },

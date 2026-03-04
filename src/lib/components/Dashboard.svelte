@@ -254,7 +254,7 @@
     </div>
   </header>
 
-  <LlmBanner />
+  <LlmBanner onOpenSettings={() => settingsOpen = true} />
 
   {#if running || probeStep}
     <div class="testing-banner">

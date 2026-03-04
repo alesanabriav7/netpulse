@@ -2,30 +2,43 @@
   import { appConfig } from '../stores/config'
   import type { SafeAppConfig } from '../../../shared/types'
 
+  let { onOpenSettings }: { onOpenSettings?: () => void } = $props()
+
   let config: SafeAppConfig | null = $state(null)
   let dismissed = $state(false)
 
   appConfig.subscribe(v => { config = v })
 
-  let message = $derived.by(() => {
+  let banner = $derived.by(() => {
     if (!config || dismissed) return null
     if (config.llmAutoDetected && config.llmProvider) {
       const model = config.llmModel || config.llmProvider
-      return `AI analysis enabled via ${config.llmProvider} (${model})`
+      return {
+        variant: 'info' as const,
+        text: `AI insights active — analyzing your network with ${model}`,
+        action: null,
+      }
     }
     if (config.llmEnabled === null && !config.llmProvider) {
-      return 'Enable AI analysis in Settings for network insights'
+      return {
+        variant: 'suggest' as const,
+        text: 'Get AI-powered root cause analysis and recommendations for network issues',
+        action: 'Set up in Settings',
+      }
     }
     return null
   })
-
-  let variant = $derived<'info' | 'suggest'>(config?.llmAutoDetected && config?.llmProvider ? 'info' : 'suggest')
 </script>
 
-{#if message}
-  <div class="llm-banner" class:info={variant === 'info'} class:suggest={variant === 'suggest'}>
-    <span class="banner-text">{message}</span>
-    <button class="dismiss-btn" onclick={() => dismissed = true}>&times;</button>
+{#if banner}
+  <div class="llm-banner" class:info={banner.variant === 'info'} class:suggest={banner.variant === 'suggest'}>
+    <span class="banner-text">{banner.text}</span>
+    <div class="banner-actions">
+      {#if banner.action && onOpenSettings}
+        <button class="action-btn" onclick={onOpenSettings}>{banner.action}</button>
+      {/if}
+      <button class="dismiss-btn" onclick={() => dismissed = true}>&times;</button>
+    </div>
   </div>
 {/if}
 
@@ -52,6 +65,28 @@
   .banner-text {
     flex: 1;
   }
+  .banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .action-btn {
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    color: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+    opacity: 0.85;
+    white-space: nowrap;
+  }
+  .action-btn:hover {
+    opacity: 1;
+    background: #ffffff08;
+  }
   .dismiss-btn {
     background: none;
     border: none;
@@ -59,7 +94,7 @@
     opacity: 0.6;
     font-size: 18px;
     cursor: pointer;
-    padding: 0 0 0 12px;
+    padding: 0;
     line-height: 1;
   }
   .dismiss-btn:hover {

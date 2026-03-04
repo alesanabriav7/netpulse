@@ -26,23 +26,26 @@ export async function getWifiInfoMac(): Promise<WifiInfo & { awdl_active: boolea
         const currentNetwork = iface?.spairport_current_network_information
 
         if (currentNetwork) {
-          result.ssid = currentNetwork.spairport_network_name ?? null
-          result.bssid = currentNetwork.spairport_network_bssid ?? null
+          result.ssid = currentNetwork._name ?? null
           result.security = currentNetwork.spairport_security_mode ?? null
 
           const channel = currentNetwork.spairport_network_channel
           if (channel) result.channel = String(channel)
 
-          result.noise_dbm = currentNetwork.spairport_network_noise != null
-            ? parseInt(currentNetwork.spairport_network_noise)
-            : null
-
-          result.rssi_dbm = currentNetwork.spairport_signal_noise != null
-            ? parseInt(currentNetwork.spairport_signal_noise)
-            : null
+          // spairport_signal_noise is formatted as "-37 dBm / -93 dBm" (rssi / noise)
+          const signalNoise = currentNetwork.spairport_signal_noise
+          if (typeof signalNoise === 'string') {
+            const parts = signalNoise.split('/')
+            if (parts.length === 2) {
+              const rssi = parseInt(parts[0])
+              const noise = parseInt(parts[1])
+              if (!isNaN(rssi)) result.rssi_dbm = rssi
+              if (!isNaN(noise)) result.noise_dbm = noise
+            }
+          }
 
           result.tx_rate_mbps = currentNetwork.spairport_network_rate != null
-            ? parseInt(currentNetwork.spairport_network_rate)
+            ? Number(currentNetwork.spairport_network_rate)
             : null
         }
       }

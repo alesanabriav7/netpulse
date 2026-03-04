@@ -1,35 +1,71 @@
 import type { ThroughputResult } from '@shared/types'
-import { execProbe } from '../exec-probe'
+
+// Cloudflare speed test endpoints
+const DL_URL = 'https://speed.cloudflare.com/__down'
+const UL_URL = 'https://speed.cloudflare.com/__up'
+
+// Test with increasing payload sizes for accuracy
+const DL_SIZES = [100_000, 1_000_000, 10_000_000]
+const UL_SIZES = [100_000, 1_000_000]
+
+async function measureDownload(bytes: number): Promise<number | null> {
+  try {
+    const start = performance.now()
+    const res = await fetch(`${DL_URL}?bytes=${bytes}`, {
+      signal: AbortSignal.timeout(30_000)
+    })
+    if (!res.ok) return null
+    // Consume the body to measure actual transfer time
+    await res.arrayBuffer()
+    const elapsed = (performance.now() - start) / 1000 // seconds
+    if (elapsed <= 0) return null
+    return (bytes * 8) / elapsed / 1_000_000 // Mbps
+  } catch {
+    return null
+  }
+}
+
+async function measureUpload(bytes: number): Promise<number | null> {
+  try {
+    const payload = new Uint8Array(bytes)
+    const start = performance.now()
+    const res = await fetch(UL_URL, {
+      method: 'POST',
+      body: payload,
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) return null
+    await res.text()
+    const elapsed = (performance.now() - start) / 1000
+    if (elapsed <= 0) return null
+    return (bytes * 8) / elapsed / 1_000_000 // Mbps
+  } catch {
+    return null
+  }
+}
 
 export async function runThroughputWindows(): Promise<ThroughputResult> {
-  // Download test using curl against Cloudflare
-  const dlRaw = await execProbe(
-    'curl -o NUL -w "%{speed_download}" https://speed.cloudflare.com/__down?bytes=10000000',
-    60_000
-  )
-
-  // Upload test using curl against Cloudflare
-  const ulRaw = await execProbe(
-    'curl -X POST -o NUL -w "%{speed_upload}" --data-binary @NUL https://speed.cloudflare.com/__up',
-    60_000
-  )
-
-  let dl_throughput_mbps: number | null = null
-  let ul_throughput_mbps: number | null = null
-
-  if (dlRaw) {
-    const bytesPerSec = parseFloat(dlRaw)
-    if (!isNaN(bytesPerSec) && bytesPerSec > 0) {
-      dl_throughput_mbps = Math.round((bytesPerSec * 8) / 1_000_000 * 100) / 100
-    }
+  // Run download tests with increasing sizes
+  const dlResults: number[] = []
+  for (const size of DL_SIZES) {
+    const speed = await measureDownload(size)
+    if (speed !== null) dlResults.push(speed)
   }
 
-  if (ulRaw) {
-    const bytesPerSec = parseFloat(ulRaw)
-    if (!isNaN(bytesPerSec) && bytesPerSec > 0) {
-      ul_throughput_mbps = Math.round((bytesPerSec * 8) / 1_000_000 * 100) / 100
-    }
+  // Run upload tests with increasing sizes
+  const ulResults: number[] = []
+  for (const size of UL_SIZES) {
+    const speed = await measureUpload(size)
+    if (speed !== null) ulResults.push(speed)
   }
+
+  // Take the maximum (largest payload gives most accurate result)
+  const dl_throughput_mbps = dlResults.length > 0
+    ? Math.round(Math.max(...dlResults) * 100) / 100
+    : null
+  const ul_throughput_mbps = ulResults.length > 0
+    ? Math.round(Math.max(...ulResults) * 100) / 100
+    : null
 
   return {
     dl_throughput_mbps,
@@ -38,6 +74,6 @@ export async function runThroughputWindows(): Promise<ThroughputResult> {
     ul_responsiveness_rpm: null,
     dl_latency_ms: null,
     ul_latency_ms: null,
-    raw: `dl: ${dlRaw}, ul: ${ulRaw}`
+    raw: JSON.stringify({ dl: dlResults, ul: ulResults })
   }
 }
